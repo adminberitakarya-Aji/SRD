@@ -1,6 +1,7 @@
 # Build MT5
 *.ex5
 *.log
+__pycache__/
 judge/out/
 judge/out_*/
 judge/ohlc_*.csv
