@@ -1,7 +1,8 @@
 """Replay logger SRD_Indi murni Python (tanpa MT5) utk Fase 3.
-Meniru engine v2.51: fractal swing -> cluster ATR -> touches ->
-3 RES/SUP terdekat -> confluence -> TERKUAT -> snapshot 18/jam.
-Pakai: py judge/replay_logger.py --ohlc ohlc_xauusd.csv --out signals_replay.csv
+Meniru engine v2.60: fractal swing -> cluster ATR -> touches ->
+3 RES/SUP terdekat -> confluence -> TERKUAT (seri=jarak dekat) ->
+S&D skor kualitas (Fresh1000+FVG100+srConfl50+strength-jarak) ->
+snapshot 18/jam. Pakai: py judge/replay_logger.py --ohlc ohlc.csv --out signals.csv
 """
 import argparse, csv
 from collections import defaultdict
@@ -133,6 +134,19 @@ def trend_ctx(d1, h4, h1, upto_h1, e50_d1=None, e50_h4=None, e50_h1=None,
     d_h1, _ = one(e50_h1, cl_h1, upto_h1) if e50_h1 else ("FL", 0.0)
     return "D1_%s/H4_%s/H1_%s|ADX%.0f" % (d_d1, d_h4, d_h1, ax)
 
+def sd_score(z, bid, a):
+    # Cermin SDZoneScore() v2.60: Fresh=1000 + FVG=100 + srConfl=50
+    # + strength - penalti jarak/ATR. srConfl dihitung on-the-fly
+    # terhadap level S&R snapshot (butuh lv + tol) — lihat pemakaian.
+    s = 0.0
+    if z["st"] == "Fresh": s += 1000.0
+    if z["fvg"]: s += 100.0
+    if z.get("srConfl"): s += 50.0
+    s += z.get("str", 0.0)
+    if a > 0:
+        s -= abs(z["mid"] - bid) / a
+    return s
+
 def sd_zones(bars, upto, bid, a):
     # Tiru FindSDZonesForTF: ImpOut impulse + base<=5 + ImpIn, Fresh/Tested,
     # buang Consumed, plus FVG 3-candle 50% CE di departure leg.
@@ -225,9 +239,13 @@ def sd_zones(bars, upto, bid, a):
                         for kk in range(eb, n):
                             if highs[kk] >= mid: mit = True; break
                     if not mit: fvg = 1
+            # Strength = body ImpOut dalam ATR (cermin MQL5 strength).
+            impBody = abs(c - o)
+            impStr = (impBody / a) if a > 0 else 0.0
             out.append({"mid": (zT + zB) / 2, "st": st, "fvg": fvg,
                         "dem": bool(isDem), "oi": oi, "age": n - 1 - oi,
-                        "zt": zT, "zb": zB})
+                        "zt": zT, "zb": zB, "str": impStr,
+                        "srConfl": False})
             break
         if len(out) >= 40: break
     return out
@@ -303,8 +321,13 @@ def main():
                                 if abs(z2["mid"] - z["mid"]) <= CONF_TOL_ATR * aa[name]:
                                     c += 1; tt += z2["t"]; break
                         z["conf"] = c; z["totalT"] = tt
-            sres = sorted([x for x in flat if x[1] == "RES"], key=lambda x: (-x[3]["conf"], -x[3]["totalT"]))[:2]
-            ssup = sorted([x for x in flat if x[1] == "SUP"], key=lambda x: (-x[3]["conf"], -x[3]["totalT"]))[:2]
+                        z["dist"] = abs(z["mid"] - bid)
+            # v2.60: S&R Terkuat seri (conf+touches sama) dimenangkan jarak
+            # dekat (cermin FindStrongestLevels). Dulu urutan TF mentah.
+            sres = sorted([x for x in flat if x[1] == "RES"],
+                          key=lambda x: (-x[3]["conf"], -x[3]["totalT"], x[3].get("dist", 1e9)))[:2]
+            ssup = sorted([x for x in flat if x[1] == "SUP"],
+                          key=lambda x: (-x[3]["conf"], -x[3]["totalT"], x[3].get("dist", 1e9)))[:2]
             strong = set((n, s, k) for n, s, k, z, e in (sres + ssup))
             srank = {}
             for i, (n, s, k, z, e) in enumerate(sres): srank[(n, s, k)] = 1 if i == 0 else 2
@@ -313,20 +336,31 @@ def main():
             for name, side, k, z, exp in flat:
                 at = aa[name]
                 tol = max(CONF_TOL_ATR * at, 0.15)
-                sdO, fvg, sdS = 0, 0, "None"
+                # v2.60: tag = zona skor-TERTINGGI yg overlap (cermin
+                # BuildNearestSD+FindStrongestLevels). Dulu zona PERTAMA yg
+                # overlap (bias Tested dekat) — Fresh jauh tak pernah menang.
+                best = None
+                bestSc = -1e18
+                bestA = 1.0
                 for sdn in ("H1", "H4"):
+                    bars2, _ = cutSR[sdn]
+                    a2 = atr(bars2, len(bars2) - 1)
                     for zn in sdCache[sdn]:
-                        if abs(zn["mid"] - z["mid"]) <= tol:
-                            sdO = 1
-                            if zn["fvg"]: fvg = 1
-                            if zn["st"] == "Fresh" or sdS == "None": sdS = zn["st"]
-                            break
-                    if sdO: break
+                        if abs(zn["mid"] - z["mid"]) > tol: continue
+                        zn["srConfl"] = True
+                        sc = sd_score(zn, bid, a2 if a2 > 0 else at)
+                        if sc > bestSc:
+                            bestSc = sc; best = zn; bestA = a2
+                sdO, fvg, sdS = 0, 0, "None"
+                if best is not None:
+                    sdO = 1
+                    if best["fvg"]: fvg = 1
+                    sdS = best["st"]
                 uhh = bisect.bisect_right(tlist["H1"], ht) - 1
                 ud1 = bisect.bisect_right([b[0] for b in data.get("D1", [])], ht) - 1 if data.get("D1") else 0
                 uh4 = bisect.bisect_right(tlist["H4"], ht) - 1
                 tc = trend_ctx_idx(e50, cl, ud1, uh4, uhh)
-                w.writerow([ht.strftime("%Y-%m-%d %H:%M:%S"), a.symbol, "H1", name, side, k + 1, round(z["mid"], 2), z["t"], z["conf"], z["totalT"], 1 if (name, side, k) in strong else 0, srank.get((name, side, k), 0), sdO, fvg, sdS, 0, tc, round(bid, 2), round(ask, 2), 32, round(at, 2), round(abs(z["mid"] - bid) / at, 3) if at else 0, exp, "2.51-replay"])
+                w.writerow([ht.strftime("%Y-%m-%d %H:%M:%S"), a.symbol, "H1", name, side, k + 1, round(z["mid"], 2), z["t"], z["conf"], z["totalT"], 1 if (name, side, k) in strong else 0, srank.get((name, side, k), 0), sdO, fvg, sdS, 0, tc, round(bid, 2), round(ask, 2), 32, round(at, 2), round(abs(z["mid"] - bid) / at, 3) if at else 0, exp, "2.60-replay"])
                 rows += 1
     print("replay rows=%d -> %s" % (rows, a.out))
 
