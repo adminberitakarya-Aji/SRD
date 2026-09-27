@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import MetaTrader5 as mt5
 
 TFMAP = {"M30": mt5.TIMEFRAME_M30, "H1": mt5.TIMEFRAME_H1,
-         "H4": mt5.TIMEFRAME_H4}
+         "H4": mt5.TIMEFRAME_H4, "D1": mt5.TIMEFRAME_D1}
 
 def main():
     ap = argparse.ArgumentParser(description="Export OHLC MT5")

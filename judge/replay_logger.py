@@ -9,6 +9,11 @@ from datetime import datetime
 MERGE_ATR = 0.30
 MINTHICK_ATR = 0.15
 CONF_TOL_ATR = 0.25
+FVG_MIN_ATR = 0.15
+IMPULSE_ATR = 1.0
+BASEMAX_ATR = 0.8
+BASEMAX_N = 5
+SD_SCAN = 400
 SCAN = 300
 MINTOUCH = 1
 LOOK = {30: 4, 60: 4, 240: 3}
@@ -68,6 +73,152 @@ def build(bars, upto, tfmin, bid):
     sup = sorted([z for z in zones if z["sup"]], key=lambda z: abs(z["mid"] - bid))[:3]
     res = sorted([z for z in zones if not z["sup"]], key=lambda z: abs(z["mid"] - bid))[:3]
     return (sup, res), a
+
+def ema_series(closes, period):
+    k = 2.0 / (period + 1.0)
+    n = len(closes)
+    out = [None] * n
+    if n < period: return out
+    s = sum(closes[:period]) / period
+    out[period - 1] = s
+    for i in range(period, n):
+        s = closes[i] * k + s * (1 - k)
+        out[i] = s
+    return out
+
+def trend_ctx_idx(e50, cl, ud1, uh4, uhh):
+    # Index sudah diselaraskan ke bar <= ht per TF. O(1) per snapshot.
+    def one(e, closes, upto):
+        if e is None or closes is None: return ("FL", 0.0)
+        if upto is None or upto >= len(e) or upto >= len(closes): return ("FL", 0.0)
+        if e[upto] is None or upto < 4: return ("FL", 0.0)
+        slope = e[upto - 1] - e[upto - 3]
+        c = closes[upto - 1]
+        d = "UP" if (c > e[upto - 1] and slope > 0) else ("DN" if (c < e[upto - 1] and slope < 0) else "FL")
+        chg = 0.0
+        a0 = max(1, upto - 13)
+        for i in range(a0, upto + 1): chg += abs(closes[i] - closes[i - 1])
+        net = abs(closes[upto] - closes[max(0, upto - 14)])
+        adx = round(100.0 * net / chg, 0) if chg > 0 else 0.0
+        return (d, adx)
+    d_d1, _ = one(e50.get("D1"), cl.get("D1"), ud1) if e50.get("D1") else ("NA", 0.0)
+    d_h4, ax = one(e50.get("H4"), cl.get("H4"), uh4) if e50.get("H4") else ("FL", 0.0)
+    d_h1, _ = one(e50.get("H1"), cl.get("H1"), uhh) if e50.get("H1") else ("FL", 0.0)
+    return "D1_%s/H4_%s/H1_%s|ADX%.0f" % (d_d1, d_h4, d_h1, ax)
+
+def trend_ctx(d1, h4, h1, upto_h1, e50_d1=None, e50_h4=None, e50_h1=None,
+              cl_d1=None, cl_h4=None, cl_h1=None):
+    # EMA50 dihitung SEKALI di main (bukan per snapshot) -> O(1) per snapshot.
+    def one(e, closes, upto):
+        if e is None or closes is None: return ("FL", 0.0)
+        if upto is None or upto >= len(e) or upto >= len(closes): return ("FL", 0.0)
+        if e[upto] is None or upto < 4: return ("FL", 0.0)
+        slope = e[upto - 1] - e[upto - 3]
+        c = closes[upto - 1]
+        d = "UP" if (c > e[upto - 1] and slope > 0) else ("DN" if (c < e[upto - 1] and slope < 0) else "FL")
+        chg = 0.0
+        a0 = max(1, upto - 13)
+        for i in range(a0, upto + 1): chg += abs(closes[i] - closes[i - 1])
+        net = abs(closes[upto] - closes[max(0, upto - 14)])
+        adx = round(100.0 * net / chg, 0) if chg > 0 else 0.0
+        return (d, adx)
+    u_d1 = min(upto_h1 * 24, len(e50_d1) - 1) if e50_d1 else 0
+    u_h4 = min(upto_h1 * 4, len(e50_h4) - 1) if e50_h4 else 0
+    d_d1, _ = one(e50_d1, cl_d1, u_d1) if e50_d1 else ("NA", 0.0)
+    d_h4, ax = one(e50_h4, cl_h4, u_h4) if e50_h4 else ("FL", 0.0)
+    d_h1, _ = one(e50_h1, cl_h1, upto_h1) if e50_h1 else ("FL", 0.0)
+    return "D1_%s/H4_%s/H1_%s|ADX%.0f" % (d_d1, d_h4, d_h1, ax)
+
+def sd_zones(bars, upto, bid, a):
+    # Tiru FindSDZonesForTF: ImpOut impulse + base<=5 + ImpIn, Fresh/Tested,
+    # buang Consumed, plus FVG 3-candle 50% CE di departure leg.
+    # Index: bars kronologis lama->baru; bar terbaru = index TERAKHIR.
+    # Counterpart MQL5 i+x = bars[upto-x].
+    out = []
+    if a <= 0: return out
+    lim = min(SD_SCAN, upto - BASEMAX_N - 3)
+    if lim < 5: return out
+    n = upto + 1
+    lows = [b[3] for b in bars[:n]]
+    highs = [b[2] for b in bars[:n]]
+    closes = [b[4] for b in bars[:n]]
+    opens = [b[1] for b in bars[:n]]
+    for i in range(1, lim):
+        oi = upto - i
+        if oi < BASEMAX_N + 2 or oi >= n: continue
+        o, c = opens[oi], closes[oi]
+        body = abs(c - o)
+        if body < IMPULSE_ATR * a: continue
+        outBull = c > o
+        for bLen in range(1, BASEMAX_N + 1):
+            bs = oi + 1
+            be = oi + bLen
+            if be + 1 >= n: continue
+            bh = max(highs[k] for k in range(bs, be + 1))
+            bl = min(lows[k] for k in range(bs, be + 1))
+            if bh - bl > BASEMAX_ATR * a: continue
+            io, ic = opens[be + 1], closes[be + 1]
+            inBull = ic >= io
+            dem = (inBull and outBull) or ((not inBull) and outBull)
+            sup = ((not inBull) and (not outBull)) or (inBull and (not outBull))
+            isDem = dem and not sup
+            if not dem and not sup: continue
+            zT, zB = bh, bl
+            st = "Fresh"
+            # Counterpart MQL5 c2=1..i-1: candle TERBARU (n-1) turun ke oi+1.
+            for kk in range(n - 1, oi, -1):
+                if highs[kk] >= zB and lows[kk] <= zT:
+                    cl = closes[kk]
+                    if isDem and cl < zB - a * 0.1: st = "Consumed"; break
+                    if (not isDem) and cl > zT + a * 0.1: st = "Consumed"; break
+                    if st == "Fresh": st = "Tested"
+            if st == "Consumed": continue
+            if isDem and bid < zB: continue
+            if (not isDem) and bid > zT: continue
+            fvg = 0
+            mg = FVG_MIN_ATR * a
+            gap = None
+            # MQL5: i+1 = LEBIH LAMA, i-1 = LEBIH BARU (series array).
+            # Python kronologis: oi-1 = lebih lama, oi+1 = lebih baru.
+            # Jadi c1 (kiri) = oi-1, c3 (kanan) = oi+1 utk pola A.
+            fvgBar = None
+            if isDem:
+                c1h = highs[oi - 1] if oi - 1 >= 0 else -1
+                c3l = lows[oi + 1] if oi + 1 < n else -1
+                if c1h > 0 and c3l > 0 and c3l - c1h >= mg:
+                    gap = (c1h, c3l); fvgBar = oi
+                if gap is None and oi + 2 < n and oi - 2 >= 0:
+                    c1h = highs[oi - 2]; c3l = lows[oi]
+                    if c3l - c1h >= mg: gap = (c1h, c3l); fvgBar = oi - 1
+                if gap:
+                    mid = (gap[0] + gap[1]) * 0.5
+                    mit = bid <= mid
+                    if not mit:
+                        # Candle sesudah FVG: dari kanan (baru) ke kiri (lama).
+                        eb = (fvgBar + 1) if fvgBar is not None else oi + 1
+                        for kk in range(eb, n):
+                            if lows[kk] <= mid: mit = True; break
+                    if not mit: fvg = 1
+            else:
+                c1l = lows[oi - 1] if oi - 1 >= 0 else -1
+                c3h = highs[oi + 1] if oi + 1 < n else -1
+                if c1l > 0 and c3h > 0 and c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi
+                if gap is None and oi + 2 < n and oi - 2 >= 0:
+                    c1l = lows[oi - 2]; c3h = highs[oi]
+                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi - 1
+                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi + 1
+                if gap:
+                    mid = (gap[0] + gap[1]) * 0.5
+                    mit = bid >= mid
+                    if not mit:
+                        eb = (fvgBar + 1) if fvgBar is not None else oi + 1
+                        for kk in range(eb, n):
+                            if highs[kk] >= mid: mit = True; break
+                    if not mit: fvg = 1
+            out.append({"mid": (zT + zB) / 2, "st": st, "fvg": fvg,
+                        "dem": bool(isDem)})
+            break
+    return out
 def main():
     import argparse, bisect
     ap = argparse.ArgumentParser()
@@ -87,6 +238,10 @@ def main():
     h1 = data.get("H1", [])
     syms = {"M30": data.get("M30", []), "H1": h1, "H4": data.get("H4", [])}
     tlist = {n: [b[0] for b in syms[n]] for n in syms}
+    e50 = {n: ema_series([b[4] for b in syms[n]], 50) for n in syms}
+    e50["D1"] = ema_series([b[4] for b in data.get("D1", [])], 50)
+    cl = {n: [b[4] for b in syms[n]] for n in syms}
+    cl["D1"] = [b[4] for b in data.get("D1", [])]
     tfs = [("M30", 30, 24), ("H1", 60, 24), ("H4", 240, 48)]
     d0 = pt(a.from_date) if a.from_date else None
     d1 = pt(a.to_date) if a.to_date else None
@@ -111,6 +266,14 @@ def main():
                 sup, res = lv[name]
                 for k, z in enumerate(sup): flat.append((name, "SUP", k, z, exp))
                 for k, z in enumerate(res): flat.append((name, "RES", k, z, exp))
+            # S&D dihitung SEKALI per snapshot (bukan per kandidat) + cache ATR.
+            sdCache = {}
+            for sdn in ("H1", "H4"):
+                sb = syms[sdn]
+                ui2 = bisect.bisect_right(tlist[sdn], ht) - 1
+                if ui2 < 20: sdCache[sdn] = []; continue
+                a2 = atr(sb, ui2)
+                sdCache[sdn] = sd_zones(sb, ui2, bid, a2) if a2 > 0 else []
             for name, tm, exp in tfs:
                 sup, res = lv[name]
                 for side, arr in (("SUP", sup), ("RES", res)):
@@ -133,7 +296,21 @@ def main():
                 if (n, s, k) not in srank: srank[(n, s, k)] = 1 if i == 0 else 2
             for name, side, k, z, exp in flat:
                 at = aa[name]
-                w.writerow([ht.strftime("%Y-%m-%d %H:%M:%S"), a.symbol, "H1", name, side, k + 1, round(z["mid"], 2), z["t"], z["conf"], z["totalT"], 1 if (name, side, k) in strong else 0, srank.get((name, side, k), 0), 0, 0, "None", 0, "H1_FLAT|ADX0", round(bid, 2), round(ask, 2), 32, round(at, 2), round(abs(z["mid"] - bid) / at, 3) if at else 0, exp, "2.51-replay"])
+                tol = max(CONF_TOL_ATR * at, 0.15)
+                sdO, fvg, sdS = 0, 0, "None"
+                for sdn in ("H1", "H4"):
+                    for zn in sdCache[sdn]:
+                        if abs(zn["mid"] - z["mid"]) <= tol:
+                            sdO = 1
+                            if zn["fvg"]: fvg = 1
+                            if zn["st"] == "Fresh" or sdS == "None": sdS = zn["st"]
+                            break
+                    if sdO: break
+                uhh = bisect.bisect_right(tlist["H1"], ht) - 1
+                ud1 = bisect.bisect_right([b[0] for b in data.get("D1", [])], ht) - 1 if data.get("D1") else 0
+                uh4 = bisect.bisect_right(tlist["H4"], ht) - 1
+                tc = trend_ctx_idx(e50, cl, ud1, uh4, uhh)
+                w.writerow([ht.strftime("%Y-%m-%d %H:%M:%S"), a.symbol, "H1", name, side, k + 1, round(z["mid"], 2), z["t"], z["conf"], z["totalT"], 1 if (name, side, k) in strong else 0, srank.get((name, side, k), 0), sdO, fvg, sdS, 0, tc, round(bid, 2), round(ask, 2), 32, round(at, 2), round(abs(z["mid"] - bid) / at, 3) if at else 0, exp, "2.51-replay"])
                 rows += 1
     print("replay rows=%d -> %s" % (rows, a.out))
 
