@@ -1,7 +1,7 @@
 # Roadmap Pengembangan — SRD (MQL5)
 
 > Dokumen perencanaan teknis, backlog fitur, dan panduan evolusi untuk **`SRD_Indi.mq5`** (evolusi lanjutan dari `multi_indicator.mq5`).  
-> Terakhir diperbarui: **2026-09** | Status Aktif: **v2.51 (Fase 5.6 Selesai Penuh)**.
+> Terakhir diperbarui: **2026-09** | Status Aktif: **v2.60 (Fase 4.2 Ranking Kualitas SOP LIVE)**.
 
 ---
 
@@ -27,6 +27,8 @@
 | **v2.40 (SRD)** | 2026-09 | ✅ Selesai | **Fase 5.4 (Liquidity Sweep / Stop Hunt Reversal - Opsi 1)**: Deteksi candle penembusan zona dengan wick $\ge 0.3 \times \text{ATR}$ yang close kembali ke dalam base, penanda visual `⚡ SWEEP` di chart, serta peringatan instan pada baris status judul dashboard. |
 | **v2.50 (SRD)** | 2026-09 | ✅ Selesai | **Fase 5.6a (Kalibrasi R:R Helper — 3 Mode Entry)**: Input `InpRR_EntryMode` dengan 3 pilihan: `Aggressive` (edge 0%), `Equilibrium` (mid 50%), `Conservative` (deep 80%). SL tetap dari batas belakang + buffer ATR. Risk, Reward, bintang ★ (RR≥2.0) dihitung ulang sesuai mode. Label `@mid` / `@deep` tampil di baris SETUP. Tooltip S&D menampilkan risk poin & mode. |
 | **v2.51 (SRD)** | 2026-09 | ✅ Selesai | **Fase 5.6b (FVG 50% CE Mitigation)**: Input `InpFVG_MitigationType` dengan 2 pilihan: `FVG_MITIGATE_50PCT_CE` (Consequent Encroachment — **default**, SMC/ICT standar, mitigated saat Low/High retest ≥50% celah) dan `FVG_MITIGATE_FULL_FILL` (100% — hanya mitigated jika celah tertutup penuh). Tooltip kotak FVG menampilkan mode aktif. |
+| **v2.52 (SRD)** | 2026-09 | ✅ Selesai | **Audit Fix (Signal Logger stale-data)**: `LoggerMaybeSnapshot()` refresh `UpdateTrends()+RecomputeZones()` per bar H1 (independen TF chart, tetap 1x/jam VPS-safe). |
+| **v2.60 (SRD)** | 2026-09 | ✅ Selesai | **Fase 4.2 (Ranking Kualitas SOP LIVE)**: `SDZoneScore()` Fresh 1000 + FVG 100 + srConfl 50 + strength − jarak/ATR di `BuildNearestSD` & `FindStrongestLevels`; S&R seri dimenangkan jarak dekat; `InpRR_RequireFreshFVG=true` menolak Tested/tanpa-FVG jadi baris abu `SKIP`. |
 
 ---
 

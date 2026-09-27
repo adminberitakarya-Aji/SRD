@@ -1,6 +1,6 @@
 # SRD.md
 
-> **Dokumentasi teknis & panduan penggunaan** — `SRD_Indi.mq5 v2.51`  
+> **Dokumentasi teknis & panduan penggunaan** — `SRD_Indi.mq5 v2.60`  
 > Indikator **standalone, read-only**: membaca harga, menganalisis struktur Multi-TF S&R + S&D Matrix (M30, H1, H4) + Level Terkuat + Kalkulator R:R Setup + FVG Imbalance Confluence + Detektor Liquidity Sweep + panel tren D1/H4/H1 dalam satu dashboard matriks presisi. **Tidak ada logika trading sama sekali** (tanpa order, lot, SL/TP, magic number) dan **tidak terhubung ke EA mana pun**.
 
 ---
@@ -14,7 +14,7 @@
 | **Read-only** | Hanya membaca harga & membuat chart objects | 100% aman untuk Strategy Tester, live akun, dan tidak mengganggu EA lain |
 | **Multi-TF Matrix** | S&R discan serentak 3 TF (default: M30, H1, H4) | Dari 1 chart TF apa saja, trader langsung melihat struktur 3 TF |
 | **Runtime Control** | Tombol klik langsung di chart: `[S&R]`, `[S&D]`, `[-]` | Sembunyikan/tampilkan gambar zona seketika tanpa membuka menu properties |
-| **Smart Ranking** | Baris `TERKUAT>` otomatis memilih level kunci | Mengeliminasi kebingungan membaca puluhan level di tabel |
+| **Smart Ranking** | Baris `TERKUAT>` + `SETUP` dgn skor kualitas (Fresh 1000 + FVG 100 + srConfl 50 + strength − jarak/ATR; S&R seri dimenangkan jarak dekat; SETUP non-Fresh+FVG jadi abu SKIP) | Hanya level/zona lolos SOP LIVE yg hijau; Tested/tanpa-FVG ditolak eksplisit |
 | **Stateless Recompute** | Zona S&R & S&D di-rebuild setiap bar baru | Sederhana, bebas bug akumulasi state; perpindahan SUP/RES terjadi otomatis |
 
 **Sebelas pilar dalam satu dashboard SRD:**
@@ -251,6 +251,7 @@ Zona Supply & Demand dideteksi berdasarkan struktur institusional: **[Leg Masuk 
 | `InpShowRR` | `true` | Tampilkan baris proyeksi R:R Setup di dashboard |
 | `InpRR_EntryMode` | `RR_ENTRY_AGGRESSIVE` | Mode entry Fase 5.6a: Aggressive edge 0% (tanpa label) / Equilibrium mid 50% (`@mid`) / Conservative deep 80% (`@deep`); dihitung via `CalcEntryFromZone()` |
 | `InpRR_SLBufferATR` | `0.20` | Buffer jarak SL di luar batas zona base (x ATR) |
+| `InpRR_RequireFreshFVG` | `true` | Penegakan SOP LIVE Fase 4.2: SETUP hijau hanya jika zona Fresh+FVG; Tested/tanpa-FVG jadi baris abu `SKIP` (`false` = perilaku lama) |
 
 ### 6.8 FVG (Fair Value Gap) Confluence Engine (Fase 5.3 + Fase 5.6b v2.51)
 | Parameter | Default | Keterangan |
@@ -321,3 +322,5 @@ Semua objek chart yang digambar menggunakan prefix `#define OBJ_PREFIX "SRD_"` u
 | **v2.40 (SRD)** | 2026-09 | **Fase 5.4 (Liquidity Sweep / Stop Hunt Reversal - Opsi 1)**: Deteksi candle penembusan zona dengan wick $\ge 0.3 \times \text{ATR}$ yang close kembali ke dalam base, penanda visual `⚡ SWEEP` di chart candle (`SRD_SWEEP_*`), serta peringatan instan pada baris status judul dashboard (`⚡ SWEEP BUY/SELL [TF]`). |
 | **v2.50 (SRD)** | 2026-09 | **Fase 5.6a (Kalibrasi R:R Helper)**: `ENUM_RR_ENTRY_MODE` + `InpRR_EntryMode` Aggressive/Equilibrium/Conservative via `CalcEntryFromZone()`; label `@mid`/`@deep` di `CalcRRStrings()`; SL tetap buffer ATR. |
 | **v2.51 (SRD)** | 2026-09 | **Fase 5.6b (FVG 50% CE Mitigation)**: `ENUM_FVG_MITIGATION` + `InpFVG_MitigationType` 50% CE (default SMC) vs Full Fill; `mitThreshold` midpoint di `FindSDZonesForTF()` Bullish & Bearish. |
+| **v2.52 (SRD)** | 2026-09 | **Audit Fix (Signal Logger stale-data)**: `LoggerMaybeSnapshot()` refresh `UpdateTrends()+RecomputeZones()` per bar H1 (independen TF chart, tetap 1x/jam VPS-safe). |
+| **v2.60 (SRD)** | 2026-09 | **Fase 4.2 (Ranking Kualitas SOP LIVE)**: `SDZoneScore()` Fresh 1000 + FVG 100 + srConfl 50 + strength − jarak/ATR di `BuildNearestSD` & `FindStrongestLevels`; S&R seri dimenangkan jarak dekat; `InpRR_RequireFreshFVG=true` menolak Tested/tanpa-FVG jadi baris abu `SKIP`. |

@@ -29,6 +29,28 @@
 //|                                                                  |
 //|  Dokumentasi lengkap: SRD.md & roadmap.md                         |
 //|                                                                  |
+//|  BARU DI v2.60 (Fase 4.2 — Ranking Kualitas SOP LIVE):              |
+//|   - SDZoneScore(): Fresh=1000 + FVG=100 + srConfl=50 + strength    |
+//|     - penalti jarak/ATR. BuildNearestSD & FindStrongestLevels      |
+//|     kini pilih skor tertinggi (Fresh tak lagi kalah jarak).        |
+//|   - S&R Terkuat seri (conf+touches sama) dimenangkan jarak dekat.  |
+//|   - CalcRRStrings: InpRR_RequireFreshFVG=true (default) menolak    |
+//|     zona Tested/tanpa-FVG jadi baris abu SKIP (bukan hijau).       |
+//|                                                                  |
+//|  BARU DI v2.52 (Audit Fix — Signal Logger stale-data):           |
+//|   - BUG FIX: LoggerMaybeSnapshot() sebelumnya menulis snapshot   |
+//|     H1 memakai g_resLevel/g_supLevel/g_strongResTF/g_sdZones/    |
+//|     g_trend yang hanya ter-refresh mengikuti cadence bar CHART   |
+//|     yang di-attach (needRecompute di OnCalculate). Kalau         |
+//|     indikator di-attach di chart H4/M30 (bukan H1), sebagian     |
+//|     besar baris CSV per-jam sebenarnya berisi data recompute     |
+//|     bar chart TERAKHIR, bukan kondisi riil di jam H1 itu.        |
+//|   - FIX: LoggerMaybeSnapshot() sekarang memanggil sendiri        |
+//|     UpdateTrends()+RecomputeZones() tepat saat mendeteksi bar H1 |
+//|     baru (gerbang existing tetap membatasi ke 1x/jam, jadi tetap |
+//|     VPS-safe) -- akurasi CSV logger kini independen dari TF chart|
+//|     yang dipakai attach.                                         |
+//|                                                                  |
 //|  BARU DI v2.51 (Fase 5.6 — bagian FVG Mitigation):              |
 //|   - Opsi Mitigasi FVG (`ENUM_FVG_MITIGATION`):                   |
 //|     * 50% CE (Consequent Encroachment) [DEFAULT, SMC standar]:   |
@@ -41,7 +63,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "SRD - Multi-TF S&R Matrix, Confluence & S&D Engine"
 #property link        ""
-#property version     "2.51"
+#property version     "2.60"
 #property description "Multi-TF S&R Matrix (M30,H1,H4) + Confluence + Proximity + Toggle S&R/S&D + Quick Stats + Trend D1/H4/H1"
 #property description "Level Terkuat + R:R Helper + S&D Engine + FVG Imbalance + Liquidity Sweep + Smart Alert (Push MT5)"
 #property indicator_chart_window
@@ -160,6 +182,11 @@ input group "===== RISK:REWARD HELPER (FASE 5.2 + 5.6) ====="
 input bool              InpShowRR         = true;                   // Tampilkan baris proyeksi R:R Setup di panel
 input ENUM_RR_ENTRY_MODE InpRR_EntryMode  = RR_ENTRY_AGGRESSIVE;    // Mode entry: Aggressive(edge 0%), Equilibrium(mid 50%), Conservative(deep 80%)
 input double            InpRR_SLBufferATR = 0.20;                   // Buffer SL di luar batas belakang zona (x ATR)
+
+//+------------------------------------------------------------------+
+//| INPUT: penegakan kualitas SOP LIVE di R:R Helper (Fase 4.2)      |
+//+------------------------------------------------------------------+
+input bool InpRR_RequireFreshFVG = true; // SETUP hijau hanya jika zona Fresh+FVG (SOP LIVE); selain itu baris abu SKIP
 
 //=== INPUT GROUP: FVG (FAIR VALUE GAP) CONFLUENCE (FASE 5.3 + 5.6) =
 input group "===== FVG (FAIR VALUE GAP) CONFLUENCE (FASE 5.3 + 5.6) ====="
@@ -1359,31 +1386,52 @@ void CheckSDSRConfluence(const int sdTFIdx, const double atr)
   }
 
 //+------------------------------------------------------------------+
+//| QUALITY SCORE S&D (Fase 4.1): Fresh(1000) > Tested(0) + FVG(100)  |
+//| + srConfl(50) + strength(ATR) - penalti jarak (per ATR).          |
+//| Skor >1000 = Fresh, <1000 = Tested/Consumed. Dipakai BuildNearest |
+//| & FindStrongest agar zona Tested tak kalahkan Fresh yg dekat.     |
+//+------------------------------------------------------------------+
+double SDZoneScore(const SDZone &z, const double bid, const double atr)
+  {
+   double s = 0.0;
+   if(z.status == SD_FRESH) s += 1000.0;
+   if(z.hasFVG)  s += 100.0;
+   if(z.srConfl) s += 50.0;
+   s += z.strength; // impulse leg dalam ATR (biasanya 1-5)
+   if(atr > 0)
+      s -= MathAbs(z.mid - bid) / atr; // penalti jarak per ATR
+   return(s);
+  }
+
+//+------------------------------------------------------------------+
 //| S&D ENGINE: pilih zona demand & supply terdekat per TF            |
+//| Ranking kualitas: Fresh dulu, lalu FVG, lalu srConfl, lalu jarak. |
+//| (Dulu murni jarak -> Tested menempel harga kalahkan Fresh jauh.)  |
 //+------------------------------------------------------------------+
 void BuildNearestSD(const int tfIdx, const double bid)
   {
    g_sdNearestValid[tfIdx][0] = false; // demand
    g_sdNearestValid[tfIdx][1] = false; // supply
 
-   double bestDemandDist = DBL_MAX;
-   double bestSupplyDist = DBL_MAX;
+   double atr = GetATR(hSD_ATR[tfIdx]);
+   double bestDemandScore = -DBL_MAX;
+   double bestSupplyScore = -DBL_MAX;
    int    bestDemandIdx  = -1;
    int    bestSupplyIdx  = -1;
 
    int sz = ArraySize(g_sdZones[tfIdx].zones);
    for(int z = 0; z < sz; z++)
      {
-      double dist = MathAbs(g_sdZones[tfIdx].zones[z].mid - bid);
+      double sc = SDZoneScore(g_sdZones[tfIdx].zones[z], bid, atr);
       if(g_sdZones[tfIdx].zones[z].isDemand)
         {
-         if(dist < bestDemandDist)
-           { bestDemandDist = dist; bestDemandIdx = z; }
+         if(sc > bestDemandScore)
+           { bestDemandScore = sc; bestDemandIdx = z; }
         }
       else
         {
-         if(dist < bestSupplyDist)
-           { bestSupplyDist = dist; bestSupplyIdx = z; }
+         if(sc > bestSupplyScore)
+           { bestSupplyScore = sc; bestSupplyIdx = z; }
         }
      }
 
@@ -1722,14 +1770,18 @@ void DetectLiquiditySweeps()
 //+------------------------------------------------------------------+
 //| LEVEL TERKUAT: ranking top-2 RES & top-2 SUP gabungan 3 TF S&R,  |
 //| plus 1 Supply & 1 Demand S&D terkuat (H1/H4). Ranking:           |
-//|  - S&R  : confluence dulu (3TF > 2TF > 1TF), lalu totalTouches   |
-//|  - S&D  : srConfl (S&R+S&D bertepatan) dulu, lalu jarak ke harga |
+//|  - S&R  : confluence dulu (3TF > 2TF > 1TF), lalu totalTouches,  |
+//|           lalu jarak terdekat (pemecah seri, anti level jauh).   |
+//|  - S&D  : Fresh dulu (skor 1000+), lalu FVG(100)+srConfl(50)+    |
+//|           strength, minus penalti jarak (via SDZoneScore).       |
 //+------------------------------------------------------------------+
 void FindStrongestLevels()
   {
+   double bidQ = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double refATRQ = GetATR(hSR_ATR[1]);
    // --- Kumpulkan semua RES/SUP valid dari 3 TF jadi 1 daftar flat ---
-   int resTF[9], resLvl[9], resConf[9], resTouch[9]; int nRes = 0;
-   int supTF[9], supLvl[9], supConf[9], supTouch[9]; int nSup = 0;
+   int resTF[9], resLvl[9], resConf[9], resTouch[9]; double resDist[9]; int nRes = 0;
+   int supTF[9], supLvl[9], supConf[9], supTouch[9]; double supDist[9]; int nSup = 0;
 
    for(int t = 0; t < NUM_SR_TF; t++)
       for(int k = 0; k < NUM_SR_LEVELS; k++)
@@ -1738,73 +1790,78 @@ void FindStrongestLevels()
            {
             resTF[nRes] = t; resLvl[nRes] = k;
             resConf[nRes] = g_resLevel[t][k].confluence; resTouch[nRes] = g_resLevel[t][k].totalTouches;
+            resDist[nRes] = MathAbs(g_resLevel[t][k].price - bidQ);
             nRes++;
            }
          if(g_supLevel[t][k].valid)
            {
             supTF[nSup] = t; supLvl[nSup] = k;
             supConf[nSup] = g_supLevel[t][k].confluence; supTouch[nSup] = g_supLevel[t][k].totalTouches;
+            supDist[nSup] = MathAbs(g_supLevel[t][k].price - bidQ);
             nSup++;
            }
         }
 
-   // --- Sort RES descending by (confluence, totalTouches), ambil 2 teratas ---
+   // --- Sort RES descending by (confluence, totalTouches), seri -> jarak terdekat ---
+   // (Dulu seri confluence+touches dimenangkan urutan TF mentah -> level jauh bisa #1.)
    for(int a = 0; a < nRes - 1; a++)
      {
       int best = a;
       for(int b = a + 1; b < nRes; b++)
-         if(resConf[b] > resConf[best] || (resConf[b] == resConf[best] && resTouch[b] > resTouch[best]))
+         if(resConf[b] > resConf[best] ||
+            (resConf[b] == resConf[best] && resTouch[b] > resTouch[best]) ||
+            (resConf[b] == resConf[best] && resTouch[b] == resTouch[best] && resDist[b] < resDist[best]))
             best = b;
       if(best != a)
         {
-         int t1 = resTF[a], l1 = resLvl[a], c1 = resConf[a], tt1 = resTouch[a];
-         resTF[a] = resTF[best]; resLvl[a] = resLvl[best]; resConf[a] = resConf[best]; resTouch[a] = resTouch[best];
-         resTF[best] = t1; resLvl[best] = l1; resConf[best] = c1; resTouch[best] = tt1;
+         int t1 = resTF[a], l1 = resLvl[a], c1 = resConf[a], tt1 = resTouch[a]; double d1 = resDist[a];
+         resTF[a] = resTF[best]; resLvl[a] = resLvl[best]; resConf[a] = resConf[best]; resTouch[a] = resTouch[best]; resDist[a] = resDist[best];
+         resTF[best] = t1; resLvl[best] = l1; resConf[best] = c1; resTouch[best] = tt1; resDist[best] = d1;
         }
      }
    g_strongResTF[0] = (nRes > 0) ? resTF[0] : -1;  g_strongResLvl[0] = (nRes > 0) ? resLvl[0] : -1;
    g_strongResTF[1] = (nRes > 1) ? resTF[1] : -1;  g_strongResLvl[1] = (nRes > 1) ? resLvl[1] : -1;
 
-   // --- Sort SUP dengan cara yang sama ---
+   // --- Sort SUP dengan cara yang sama (seri -> jarak terdekat) ---
    for(int a = 0; a < nSup - 1; a++)
      {
       int best = a;
       for(int b = a + 1; b < nSup; b++)
-         if(supConf[b] > supConf[best] || (supConf[b] == supConf[best] && supTouch[b] > supTouch[best]))
+         if(supConf[b] > supConf[best] ||
+            (supConf[b] == supConf[best] && supTouch[b] > supTouch[best]) ||
+            (supConf[b] == supConf[best] && supTouch[b] == supTouch[best] && supDist[b] < supDist[best]))
             best = b;
       if(best != a)
         {
-         int t1 = supTF[a], l1 = supLvl[a], c1 = supConf[a], tt1 = supTouch[a];
-         supTF[a] = supTF[best]; supLvl[a] = supLvl[best]; supConf[a] = supConf[best]; supTouch[a] = supTouch[best];
-         supTF[best] = t1; supLvl[best] = l1; supConf[best] = c1; supTouch[best] = tt1;
+         int t1 = supTF[a], l1 = supLvl[a], c1 = supConf[a], tt1 = supTouch[a]; double d1 = supDist[a];
+         supTF[a] = supTF[best]; supLvl[a] = supLvl[best]; supConf[a] = supConf[best]; supTouch[a] = supTouch[best]; supDist[a] = supDist[best];
+         supTF[best] = t1; supLvl[best] = l1; supConf[best] = c1; supTouch[best] = tt1; supDist[best] = d1;
         }
      }
    g_strongSupTF[0] = (nSup > 0) ? supTF[0] : -1;  g_strongSupLvl[0] = (nSup > 0) ? supLvl[0] : -1;
    g_strongSupTF[1] = (nSup > 1) ? supTF[1] : -1;  g_strongSupLvl[1] = (nSup > 1) ? supLvl[1] : -1;
 
-   // --- S&D: 1 Supply + 1 Demand terkuat, prioritas srConfl lalu hasFVG lalu jarak ke harga ---
+   // --- S&D: 1 Supply + 1 Demand terkuat via SKOR KUALITAS (bukan jarak mentah) ---
+   // Fresh(1000) selalu kalahkan Tested; FVG(100) > srConfl(50) > strength > jarak.
+   // g_sdNearest[*] kini sudah berisi zona skor-tertinggi per TF (BuildNearestSD),
+   // jadi pilih antar-TF tinggal bandingkan skornya (bukan rantai if jarak).
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double bestSupplyDist = DBL_MAX, bestDemandDist = DBL_MAX;
    g_strongSDSupplyTF = -1; g_strongSDDemandTF = -1;
+   double bestSupplyScore = -DBL_MAX, bestDemandScore = -DBL_MAX;
    for(int t = 0; t < NUM_SD_TF; t++)
      {
+      double atrT = GetATR(hSD_ATR[t]);
       if(g_sdNearestValid[t][1]) // supply
         {
-         double d = MathAbs(g_sdNearest[t][1].mid - bid);
-         bool better = (g_strongSDSupplyTF < 0) ||
-                       (g_sdNearest[t][1].srConfl && !g_sdNearest[g_strongSDSupplyTF][1].srConfl) ||
-                       (g_sdNearest[t][1].hasFVG && !g_sdNearest[g_strongSDSupplyTF][1].hasFVG) ||
-                       (d < bestSupplyDist);
-         if(better) { bestSupplyDist = d; g_strongSDSupplyTF = t; }
+         double sc = SDZoneScore(g_sdNearest[t][1], bid, atrT);
+         if(g_strongSDSupplyTF < 0 || sc > bestSupplyScore)
+           { bestSupplyScore = sc; g_strongSDSupplyTF = t; }
         }
       if(g_sdNearestValid[t][0]) // demand
         {
-         double d = MathAbs(g_sdNearest[t][0].mid - bid);
-         bool better = (g_strongSDDemandTF < 0) ||
-                       (g_sdNearest[t][0].srConfl && !g_sdNearest[g_strongSDDemandTF][0].srConfl) ||
-                       (g_sdNearest[t][0].hasFVG && !g_sdNearest[g_strongSDDemandTF][0].hasFVG) ||
-                       (d < bestDemandDist);
-         if(better) { bestDemandDist = d; g_strongSDDemandTF = t; }
+         double sc = SDZoneScore(g_sdNearest[t][0], bid, atrT);
+         if(g_strongSDDemandTF < 0 || sc > bestDemandScore)
+           { bestDemandScore = sc; g_strongSDDemandTF = t; }
         }
      }
   }
@@ -2009,6 +2066,16 @@ void LoggerMaybeSnapshot()
    if(h1Bar == 0 || h1Bar == g_logLastH1Bar) return;
    g_logLastH1Bar = h1Bar;
 
+   // FIX (audit): jangan andalkan cadence recompute chart yang di-attach (needRecompute
+   // di OnCalculate cuma jalan per bar CHART, bisa H4/M30/dll). Logger berjalan dengan
+   // jamnya sendiri (per bar H1), jadi paksa refresh data di sini juga -- supaya g_resLevel/
+   // g_supLevel/g_strongResTF/g_sdZones/g_trend yang ditulis ke CSV selalu representasi
+   // H1 bar INI, bukan sisa recompute bar chart sebelumnya (yang bisa berjam-jam lalu kalau
+   // chart di-attach di H4). Gerbang di atas (h1Bar == g_logLastH1Bar) sudah membatasi ini
+   // ke maksimal 1x per jam, jadi tetap sejalan dengan prinsip VPS-safe "1x per bar".
+   UpdateTrends();
+   RecomputeZones();
+
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
    string fname = StringFormat("%s_%04d%02d%02d.csv", InpLoggerPrefix, dt.year, dt.mon, dt.day);
    bool needHeader = (!g_logHeaderDone || g_logFileName != fname);
@@ -2120,9 +2187,21 @@ void CalcRRStrings(string &buyTxt, string &sellTxt, color &buyClr, color &sellCl
      }
 
    //--- 1. Proyeksi Setup BUY (dari Demand Terkuat menuju RES Terkuat)
+   //        SOP LIVE: zona Tested/tanpa-FVG DITOLAK jadi baris abu SKIP (bukan hijau).
    if(g_strongSDDemandTF >= 0 && g_sdNearestValid[g_strongSDDemandTF][0])
      {
       SDZone dz    = g_sdNearest[g_strongSDDemandTF][0];
+      bool dzOK = (!InpRR_RequireFreshFVG) ||
+                  (dz.status == SD_FRESH && dz.hasFVG);
+      if(!dzOK)
+        {
+         buyTxt = StringFormat("SETUP > BUY SKIP (butuh Fresh+FVG, zona %s%s)",
+                               (dz.status == SD_FRESH ? "Fresh" : "Tested"),
+                               (dz.hasFVG ? "+FVG" : "-noFVG"));
+         buyClr = clrDimGray;
+        }
+      else
+        {
       double entry = CalcEntryFromZone(dz, true);   // entry sesuai mode
       double sl    = dz.bottom - buffer;             // SL tetap dari dasar zona (batas belakang)
       double risk  = entry - sl;
@@ -2167,6 +2246,7 @@ void CalcRRStrings(string &buyTxt, string &sellTxt, color &buyClr, color &sellCl
                                DoubleToString(sl, _Digits));
          buyClr = clrDarkSeaGreen;
         }
+        } // end dzOK (Fresh+FVG) — penegakan SOP LIVE
      }
    else
      {
@@ -2175,9 +2255,21 @@ void CalcRRStrings(string &buyTxt, string &sellTxt, color &buyClr, color &sellCl
      }
 
    //--- 2. Proyeksi Setup SELL (dari Supply Terkuat menuju SUP Terkuat)
+   //        SOP LIVE: sama seperti BUY — tolak Tested/tanpa-FVG jadi SKIP abu.
    if(g_strongSDSupplyTF >= 0 && g_sdNearestValid[g_strongSDSupplyTF][1])
      {
       SDZone sz    = g_sdNearest[g_strongSDSupplyTF][1];
+      bool szOK = (!InpRR_RequireFreshFVG) ||
+                  (sz.status == SD_FRESH && sz.hasFVG);
+      if(!szOK)
+        {
+         sellTxt = StringFormat("       SELL SKIP (butuh Fresh+FVG, zona %s%s)",
+                                (sz.status == SD_FRESH ? "Fresh" : "Tested"),
+                                (sz.hasFVG ? "+FVG" : "-noFVG"));
+         sellClr = clrDimGray;
+        }
+      else
+        {
       double entry = CalcEntryFromZone(sz, false);  // entry sesuai mode
       double sl    = sz.top + buffer;               // SL tetap dari batas atas zona (batas belakang)
       double risk  = sl - entry;
@@ -2222,6 +2314,7 @@ void CalcRRStrings(string &buyTxt, string &sellTxt, color &buyClr, color &sellCl
                                 DoubleToString(sl, _Digits));
          sellClr = clrIndianRed;
         }
+        } // end szOK (Fresh+FVG) — penegakan SOP LIVE
      }
    else
      {
