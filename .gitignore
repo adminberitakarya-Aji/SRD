@@ -1,6 +1,7 @@
 # Build MT5
 *.ex5
 *.log
+judge/out/
 # Editor
 .vscode/
 *.code-workspace

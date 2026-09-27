@@ -56,7 +56,7 @@ Aktifkan via input InpEnableLogger=true (default false agar panel hemat IO).
 Fungsi: LoggerTrendCtx/LoggerStrongRank/LoggerSDTag/LoggerWriteRow/
 LoggerMaybeSnapshot dipanggil di OnCalculate + reset di OnInit.
 
-## 6. Spec Judge (Python, belum dibuat)
+## 6. Spec Judge (Python Fase 2, SELESAI — judge/judge.py)
 Input CSV + OHLC M30/H1/H4. Output tabel per (agent_tf,side,rank_jarak)
 + slice filter. Analisis wajib: (1) TF mana valid, (2) rank mana valid,
 (3) filter apa menaikkan validitas, (4) mode entry optimal Agg/Mid/Deep
@@ -74,8 +74,7 @@ KUNCI Opsi A level searah TF sama (fallback 2R bila kosong).
 Q4 Expiry: KUNCI 24j M30 / 24j H1 / 48j H4.
 
 ## 9. Next Step
-Fase 0 SELESAI (Q1-Q4 kunci: H1 / market N+1 / TP2 level / 24-24-48).
-Next: Fase 1 Buat SRD_Logger.mq5 Bab 5.
+Fase 0-2 SELESAI. Next: Fase 3 running data real 2 thn XAUUSD.
 4 Buat judge.py Bab 6 running 2 thn. 5 Keputusan live: TF+filter+mode entry.
 
 ## 10. Roadmap Step-by-Step (kunci: Q1=H1, 3 agent tetap)
@@ -95,7 +94,7 @@ format Bab 5 ke MQL5/Files/SRD_signals_YYYYMMDD.csv (append).
 1.4 Uji 1 minggu live/demo: cek 18 baris/jam, kolom lengkap, version 2.51.
 Gate: CSV 1 minggu valid, lanjut Fase 2.
 
-Fase 2 Judge v1 (Python judge.py).
+Fase 2 Judge v1: SELESAI (judge.py + contoh lolos uji).
 2.1 Load CSV + OHLC M30/H1/H4 (MT5 export / paket MetaTrader5).
 2.2 Event sentuh +- toleransi dalam expiry 24/24/48 jam, max 1 trade/kandidat.
 2.3 Entry open N+1, SL 0.20*ATR_TF, TP1 1R, TP2 level/fallback 2R,
