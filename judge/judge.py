@@ -79,12 +79,15 @@ def mk(s, eT, xT, e, sl, tp1, tp2, label, r):
 
 def judge(signals, ohlc, pmap):
     trades = []
+    bySnap = defaultdict(list)
+    for c in signals:
+        bySnap[(c["t"], c["symbol"], c["agent"])].append(c)
     for s in signals:
         key = (s["symbol"], "H1")
         bars = ohlc.get(key)
         if not bars:
             bars = next((v for k, v in ohlc.items()
-                         if k[0] == s["symbol"]), None)
+                         if k[0].split(".")[0] == s["symbol"].split(".")[0]), None)
         if not bars: continue
         i0 = idx_after(bars, s["t"])
         if i0 >= len(bars): continue
@@ -112,8 +115,7 @@ def judge(signals, ohlc, pmap):
                 if risk <= 0: break
                 tp1 = (e + risk) if isBuy else (e - risk)
                 tp2 = None
-                for c in signals:
-                    if c["t"] != s["t"] or c["symbol"] != s["symbol"] or c["agent"] != s["agent"]: continue
+                for c in bySnap.get((s["t"], s["symbol"], s["agent"]), []):
                     if c["side"] != ("RES" if isBuy else "SUP"): continue
                     if c["price"] == s["price"]: continue
                     px = c["price"]

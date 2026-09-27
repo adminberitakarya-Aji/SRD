@@ -2,6 +2,8 @@
 *.ex5
 *.log
 judge/out/
+judge/ohlc_*.csv
+judge/signals_replay.csv
 # Editor
 .vscode/
 *.code-workspace

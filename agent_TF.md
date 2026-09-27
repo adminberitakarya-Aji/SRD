@@ -74,7 +74,7 @@ KUNCI Opsi A level searah TF sama (fallback 2R bila kosong).
 Q4 Expiry: KUNCI 24j M30 / 24j H1 / 48j H4.
 
 ## 9. Next Step
-Fase 0-2 SELESAI. Next: Fase 3 running data real 2 thn XAUUSD.
+Fase 0-2 SELESAI. Fase 3 parsial: replay Jan-2024 selesai (lihat judge/HASIL_FASE3.md).
 4 Buat judge.py Bab 6 running 2 thn. 5 Keputusan live: TF+filter+mode entry.
 
 ## 10. Roadmap Step-by-Step (kunci: Q1=H1, 3 agent tetap)
