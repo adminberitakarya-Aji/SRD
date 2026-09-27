@@ -1,0 +1,8 @@
+# Build MT5
+*.ex5
+# Editor
+.vscode/
+*.code-workspace
+# OS
+Thumbs.db
+Desktop.ini
