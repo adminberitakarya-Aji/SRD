@@ -183,37 +183,36 @@ def sd_zones(bars, upto, bid, a):
             fvg = 0
             mg = FVG_MIN_ATR * a
             gap = None
-            # MQL5 series: i+1 = LAMA (kiri), i-1 = BARU (kanan).
-            # Kronologis: c1 (kiri/lama) = oi+1? TIDAK — ImpOut di oi,
-            # base di kiri (lama), jadi formasi FVG: c1=oi+1 (kanan/baru)?
-            # Ikuti MQL5 harfiah: c1=i+1 -> kronologis oi-1 (kiri/lama),
-            # c3=i-1 -> kronologis oi+1 (kanan/baru). Pola A: gap c3-c1.
+            # MQL5 series: bar 0 = TERBARU. Kronologis: oi kecil = lama.
+            # i+1 (MQL5) = 1 bar LEBIH LAMA = oi-1 kronologis.
+            # i-1 (MQL5) = 1 bar LEBIH BARU = oi+1 kronologis.
+            # Pola A demand: c1=high(oi-1), c3=low(oi+1); gap jika c3-c1>=mg.
+            # Pola B demand: c1=high(oi-2), c3=low(oi); fvgBar=oi-1.
+            # Mitigasi: candle LEBIH BARU dari evalBar = oi+1..n-1 + bid.
             fvgBar = None
             if isDem:
-                c1h = highs[oi + 1] if oi + 1 < n else -1
-                c3l = lows[oi - 1] if oi - 1 >= 0 else -1
+                c1h = highs[oi - 1] if oi - 1 >= 0 else -1
+                c3l = lows[oi + 1] if oi + 1 < n else -1
                 if c1h > 0 and c3l > 0 and c3l - c1h >= mg:
                     gap = (c1h, c3l); fvgBar = oi
-                if gap is None and oi + 2 < n:
-                    c1h = highs[oi + 2]; c3l = lows[oi]
-                    if c3l - c1h >= mg: gap = (c1h, c3l); fvgBar = oi + 1
+                if gap is None and oi - 2 >= 0:
+                    c1h = highs[oi - 2]; c3l = lows[oi]
+                    if c3l - c1h >= mg: gap = (c1h, c3l); fvgBar = oi - 1
                 if gap:
                     mid = (gap[0] + gap[1]) * 0.5
                     mit = bid <= mid
                     if not mit:
-                        # MQL5 evalBar-1..1 = bar lebih BARU dari FVG (kanan).
                         eb = (fvgBar + 1) if fvgBar is not None else oi + 1
                         for kk in range(eb, n):
                             if lows[kk] <= mid: mit = True; break
                     if not mit: fvg = 1
             else:
-                c1l = lows[oi + 1] if oi + 1 < n else -1
-                c3h = highs[oi - 1] if oi - 1 >= 0 else -1
+                c1l = lows[oi - 1] if oi - 1 >= 0 else -1
+                c3h = highs[oi + 1] if oi + 1 < n else -1
                 if c1l > 0 and c3h > 0 and c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi
-                if gap is None and oi + 2 < n:
-                    c1l = lows[oi + 2]; c3h = highs[oi]
-                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi + 1
-                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi + 1
+                if gap is None and oi - 2 >= 0:
+                    c1l = lows[oi - 2]; c3h = highs[oi]
+                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi - 1
                 if gap:
                     mid = (gap[0] + gap[1]) * 0.5
                     mit = bid >= mid
