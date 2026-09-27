@@ -2,7 +2,7 @@
 *.ex5
 *.log
 judge/out/
-judge/out_full/
+judge/out_*/
 judge/ohlc_*.csv
 judge/signals_*.csv
 !judge/signals_example.csv
