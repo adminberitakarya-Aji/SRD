@@ -91,10 +91,12 @@ def trend_ctx_idx(e50, cl, ud1, uh4, uhh):
     def one(e, closes, upto):
         if e is None or closes is None: return ("FL", 0.0)
         if upto is None or upto >= len(e) or upto >= len(closes): return ("FL", 0.0)
-        if e[upto] is None or upto < 4: return ("FL", 0.0)
-        slope = e[upto - 1] - e[upto - 3]
+        if upto < 4: return ("FL", 0.0)
+        e1, e3 = e[upto - 1], e[upto - 3]
+        if e1 is None or e3 is None: return ("FL", 0.0)
+        slope = e1 - e3
         c = closes[upto - 1]
-        d = "UP" if (c > e[upto - 1] and slope > 0) else ("DN" if (c < e[upto - 1] and slope < 0) else "FL")
+        d = "UP" if (c > e1 and slope > 0) else ("DN" if (c < e1 and slope < 0) else "FL")
         chg = 0.0
         a0 = max(1, upto - 13)
         for i in range(a0, upto + 1): chg += abs(closes[i] - closes[i - 1])
@@ -112,10 +114,12 @@ def trend_ctx(d1, h4, h1, upto_h1, e50_d1=None, e50_h4=None, e50_h1=None,
     def one(e, closes, upto):
         if e is None or closes is None: return ("FL", 0.0)
         if upto is None or upto >= len(e) or upto >= len(closes): return ("FL", 0.0)
-        if e[upto] is None or upto < 4: return ("FL", 0.0)
-        slope = e[upto - 1] - e[upto - 3]
+        if upto < 4: return ("FL", 0.0)
+        e1, e3 = e[upto - 1], e[upto - 3]
+        if e1 is None or e3 is None: return ("FL", 0.0)
+        slope = e1 - e3
         c = closes[upto - 1]
-        d = "UP" if (c > e[upto - 1] and slope > 0) else ("DN" if (c < e[upto - 1] and slope < 0) else "FL")
+        d = "UP" if (c > e1 and slope > 0) else ("DN" if (c < e1 and slope < 0) else "FL")
         chg = 0.0
         a0 = max(1, upto - 13)
         for i in range(a0, upto + 1): chg += abs(closes[i] - closes[i - 1])
