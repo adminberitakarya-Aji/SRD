@@ -74,8 +74,8 @@ KUNCI Opsi A level searah TF sama (fallback 2R bila kosong).
 Q4 Expiry: KUNCI 24j M30 / 24j H1 / 48j H4.
 
 ## 9. Next Step
-SELESAI PENUH (Fase 0–4). SOP live di SOP_LIVE.md. Tugas rutin: logger
-live 1 minggu + judge mingguan; edge batal jika Fresh+FVG < 0R/100 trades.
+Fase 5 live-test: setup SIAP (judge/LIVE_TEST.md + validate_live.py).
+Hari ini Minggu market tutup — attach Senin, validasi akhir minggu.
 4 Buat judge.py Bab 6 running 2 thn. 5 Keputusan live: TF+filter+mode entry.
 
 ## 10. Roadmap Step-by-Step (kunci: Q1=H1, 3 agent tetap)
