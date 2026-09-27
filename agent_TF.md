@@ -74,7 +74,8 @@ KUNCI Opsi A level searah TF sama (fallback 2R bila kosong).
 Q4 Expiry: KUNCI 24j M30 / 24j H1 / 48j H4.
 
 ## 9. Next Step
-Fase 0-2 SELESAI. Fase 3 parsial: replay Jan-2024 selesai (lihat judge/HASIL_FASE3.md).
+Fase 0-3 SELESAI (full-run 116803 signals, fondasi negatif jujur).
+Next: tambah S&D+FVG+trendCtx ke replay, replay ulang.
 4 Buat judge.py Bab 6 running 2 thn. 5 Keputusan live: TF+filter+mode entry.
 
 ## 10. Roadmap Step-by-Step (kunci: Q1=H1, 3 agent tetap)
@@ -103,7 +104,7 @@ biaya spread+50pt, label WIN_TP1/WIN_TP2/LOSE/TIMEOUT/NO_TRADE.
 MAE/MFE time-to-TP sweep_fail. Min n>=100.
 Gate: running 2 thn XAUUSD keluar tabel 3x6, lanjut Fase 3.
 
-Fase 3 Analisis Slice (jawab pertanyaan inti).
+Fase 3 Analisis Slice: SELESAI full-run 116803 signals (fondasi S&R polos).
 3.1 Slice TF: M30 vs H1 vs H4 (expiry jam sama).
 3.2 Slice rank: RES1/SUP1 vs RES2/3 per TF.
 3.3 Slice filter: conf 3 vs 2 vs 1, TERKUAT, Fresh+FVG, sweep, trend ALIGNED.
