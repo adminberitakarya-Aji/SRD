@@ -151,13 +151,16 @@ def sd_zones(bars, upto, bid, a):
         if body < IMPULSE_ATR * a: continue
         outBull = c > o
         for bLen in range(1, BASEMAX_N + 1):
-            bs = oi + 1
-            be = oi + bLen
-            if be + 1 >= n: continue
+            # MQL5 series: i+1 = LEBIH LAMA. Kronologis: base di KIRI (lama)
+            # dari ImpOut, ImpIn 1 bar lebih lama lagi dari base.
+            be = oi - 1
+            bs = oi - bLen
+            if bs < 0: continue
+            if bs - 1 < 0: continue
             bh = max(highs[k] for k in range(bs, be + 1))
             bl = min(lows[k] for k in range(bs, be + 1))
             if bh - bl > BASEMAX_ATR * a: continue
-            io, ic = opens[be + 1], closes[be + 1]
+            io, ic = opens[bs - 1], closes[bs - 1]
             inBull = ic >= io
             dem = (inBull and outBull) or ((not inBull) and outBull)
             sup = ((not inBull) and (not outBull)) or (inBull and (not outBull))
@@ -165,47 +168,51 @@ def sd_zones(bars, upto, bid, a):
             if not dem and not sup: continue
             zT, zB = bh, bl
             st = "Fresh"
-            # Counterpart MQL5 c2=1..i-1: candle TERBARU (n-1) turun ke oi+1.
-            for kk in range(n - 1, oi, -1):
-                if highs[kk] >= zB and lows[kk] <= zT:
-                    cl = closes[kk]
-                    if isDem and cl < zB - a * 0.1: st = "Consumed"; break
-                    if (not isDem) and cl > zT + a * 0.1: st = "Consumed"; break
-                    if st == "Fresh": st = "Tested"
+            # MQL5 c2=1..i-1 = bar LEBIH BARU dari ImpOut (kanan di kronologis).
+            # + filter harga running (bid di luar zona = consumed).
+            if isDem and bid < zB: st = "Consumed"
+            elif (not isDem) and bid > zT: st = "Consumed"
+            else:
+                for kk in range(oi + 1, n):
+                    if highs[kk] >= zB and lows[kk] <= zT:
+                        cl = closes[kk]
+                        if isDem and cl < zB - a * 0.1: st = "Consumed"; break
+                        if (not isDem) and cl > zT + a * 0.1: st = "Consumed"; break
+                        if st == "Fresh": st = "Tested"
             if st == "Consumed": continue
-            if isDem and bid < zB: continue
-            if (not isDem) and bid > zT: continue
             fvg = 0
             mg = FVG_MIN_ATR * a
             gap = None
-            # MQL5: i+1 = LEBIH LAMA, i-1 = LEBIH BARU (series array).
-            # Python kronologis: oi-1 = lebih lama, oi+1 = lebih baru.
-            # Jadi c1 (kiri) = oi-1, c3 (kanan) = oi+1 utk pola A.
+            # MQL5 series: i+1 = LAMA (kiri), i-1 = BARU (kanan).
+            # Kronologis: c1 (kiri/lama) = oi+1? TIDAK — ImpOut di oi,
+            # base di kiri (lama), jadi formasi FVG: c1=oi+1 (kanan/baru)?
+            # Ikuti MQL5 harfiah: c1=i+1 -> kronologis oi-1 (kiri/lama),
+            # c3=i-1 -> kronologis oi+1 (kanan/baru). Pola A: gap c3-c1.
             fvgBar = None
             if isDem:
-                c1h = highs[oi - 1] if oi - 1 >= 0 else -1
-                c3l = lows[oi + 1] if oi + 1 < n else -1
+                c1h = highs[oi + 1] if oi + 1 < n else -1
+                c3l = lows[oi - 1] if oi - 1 >= 0 else -1
                 if c1h > 0 and c3l > 0 and c3l - c1h >= mg:
                     gap = (c1h, c3l); fvgBar = oi
-                if gap is None and oi + 2 < n and oi - 2 >= 0:
-                    c1h = highs[oi - 2]; c3l = lows[oi]
-                    if c3l - c1h >= mg: gap = (c1h, c3l); fvgBar = oi - 1
+                if gap is None and oi + 2 < n:
+                    c1h = highs[oi + 2]; c3l = lows[oi]
+                    if c3l - c1h >= mg: gap = (c1h, c3l); fvgBar = oi + 1
                 if gap:
                     mid = (gap[0] + gap[1]) * 0.5
                     mit = bid <= mid
                     if not mit:
-                        # Candle sesudah FVG: dari kanan (baru) ke kiri (lama).
+                        # MQL5 evalBar-1..1 = bar lebih BARU dari FVG (kanan).
                         eb = (fvgBar + 1) if fvgBar is not None else oi + 1
                         for kk in range(eb, n):
                             if lows[kk] <= mid: mit = True; break
                     if not mit: fvg = 1
             else:
-                c1l = lows[oi - 1] if oi - 1 >= 0 else -1
-                c3h = highs[oi + 1] if oi + 1 < n else -1
+                c1l = lows[oi + 1] if oi + 1 < n else -1
+                c3h = highs[oi - 1] if oi - 1 >= 0 else -1
                 if c1l > 0 and c3h > 0 and c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi
-                if gap is None and oi + 2 < n and oi - 2 >= 0:
-                    c1l = lows[oi - 2]; c3h = highs[oi]
-                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi - 1
+                if gap is None and oi + 2 < n:
+                    c1l = lows[oi + 2]; c3h = highs[oi]
+                    if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi + 1
                     if c1l - c3h >= mg: gap = (c3h, c1l); fvgBar = oi + 1
                 if gap:
                     mid = (gap[0] + gap[1]) * 0.5
@@ -216,8 +223,10 @@ def sd_zones(bars, upto, bid, a):
                             if highs[kk] >= mid: mit = True; break
                     if not mit: fvg = 1
             out.append({"mid": (zT + zB) / 2, "st": st, "fvg": fvg,
-                        "dem": bool(isDem)})
+                        "dem": bool(isDem), "oi": oi, "age": n - 1 - oi,
+                        "zt": zT, "zb": zB})
             break
+        if len(out) >= 40: break
     return out
 def main():
     import argparse, bisect
@@ -254,26 +263,30 @@ def main():
             if d0 and ht < d0: continue
             if d1 and ht > d1: break
             bid = ask = hc
-            lv = {}; aa = {}
+            # Potong bars per TF s/d ui agar masa depan tak bocor (S&R + S&D).
+            cutSR = {}
             for name, tm, exp in tfs:
                 bars = syms[name]
                 ui = bisect.bisect_right(tlist[name], ht) - 1
+                cutSR[name] = (bars[:ui + 1], ui)
+            lv = {}; aa = {}
+            for name, tm, exp in tfs:
+                bars, ui = cutSR[name]
                 if ui < 20: lv[name] = ([], []); aa[name] = 0.0; continue
-                (sup, res), at = build(bars, ui, tm, bid)
+                (sup, res), at = build(bars, len(bars) - 1, tm, bid)
                 lv[name] = (sup, res); aa[name] = at if at > 0 else 1.0
             flat = []
             for name, tm, exp in tfs:
                 sup, res = lv[name]
                 for k, z in enumerate(sup): flat.append((name, "SUP", k, z, exp))
                 for k, z in enumerate(res): flat.append((name, "RES", k, z, exp))
-            # S&D dihitung SEKALI per snapshot (bukan per kandidat) + cache ATR.
+            # S&D SEKALI per snapshot dari bars yg sudah dipotong.
             sdCache = {}
             for sdn in ("H1", "H4"):
-                sb = syms[sdn]
-                ui2 = bisect.bisect_right(tlist[sdn], ht) - 1
+                bars, ui2 = cutSR[sdn]
                 if ui2 < 20: sdCache[sdn] = []; continue
-                a2 = atr(sb, ui2)
-                sdCache[sdn] = sd_zones(sb, ui2, bid, a2) if a2 > 0 else []
+                a2 = atr(bars, len(bars) - 1)
+                sdCache[sdn] = sd_zones(bars, len(bars) - 1, bid, a2) if a2 > 0 else []
             for name, tm, exp in tfs:
                 sup, res = lv[name]
                 for side, arr in (("SUP", sup), ("RES", res)):
