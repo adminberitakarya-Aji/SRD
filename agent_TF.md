@@ -74,8 +74,8 @@ KUNCI Opsi A level searah TF sama (fallback 2R bila kosong).
 Q4 Expiry: KUNCI 24j M30 / 24j H1 / 48j H4.
 
 ## 9. Next Step
-Slice regime SELESAI: edge = fade sisi yg ditopang struktur (2021: SELL
-RES +0.24, BUY SUP -0.30; lihat judge/HASIL_REGIME.md). Next: SOP live.
+SELESAI PENUH (Fase 0–4). SOP live di SOP_LIVE.md. Tugas rutin: logger
+live 1 minggu + judge mingguan; edge batal jika Fresh+FVG < 0R/100 trades.
 4 Buat judge.py Bab 6 running 2 thn. 5 Keputusan live: TF+filter+mode entry.
 
 ## 10. Roadmap Step-by-Step (kunci: Q1=H1, 3 agent tetap)
@@ -111,7 +111,8 @@ Fase 3 Analisis Slice: SELESAI full-run 116803 signals (fondasi S&R polos).
 3.4 Simulasi mode entry Agg/Mid/Deep via MAE (tanpa re-logging).
 Gate: tahu TF+filter+mode terbaik, lanjut Fase 4.
 
-Fase 4 Keputusan Live.
+Fase 4 Keputusan Live: SELESAI (SOP_LIVE.md). Aturan: Fresh+FVG saja,
+sisi ikut struktur (DN=SELL RES, UP=BUY SUP), MIXED skip, conf 2/3 utama.
 4.1 Tetapkan TF+filter yg dipakai live + default Inp* SRD yg perlu direvisi.
 4.2 Tulis SOP 1 halaman dari hasil (entry/SL/TP/expiry per TF).
 4.3 (Opsional) Revisi SRD.mq5 bila perlu + update SRD.md/roadmap.md.
