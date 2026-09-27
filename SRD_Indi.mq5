@@ -178,6 +178,11 @@ input int    InpSweepScanBars     = 10;           // Jumlah bar terakhir yang di
 input color  InpColorSweepBull    = clrLimeGreen; // Warna penanda Bullish Sweep (Support/Demand)
 input color  InpColorSweepBear    = clrTomato;    // Warna penanda Bearish Sweep (Resistance/Supply)
 
+//=== INPUT GROUP: SIGNAL LOGGER FOR MULTI-AGENT JUDGE (FASE AGENT-1) ==
+input group "===== SIGNAL LOGGER (CSV FOR JUDGE) ====="
+input bool   InpEnableLogger   = false;        // Tulis snapshot 18 kandidat ke CSV tiap bar baru H1 (clock kunci agent_TF.md)
+input string InpLoggerPrefix   = "SRD_Indi_signals"; // Prefix nama file di MQL5/Files (akhir: _YYYYMMDD.csv)
+
 //=== INPUT GROUP: ALERT & SMART NOTIFICATIONS =====================
 input group "===== ALERT & SMART NOTIFICATIONS (FASE 5.1) ====="
 input bool   InpAlertTouch         = false;         // Master Switch Alert saat harga menyentuh zona
@@ -299,6 +304,11 @@ datetime         g_lastBarTime    = 0;
 bool             g_timerActive    = false;
 int              g_timerCount     = 0;
 bool             g_panelCollapsed = false; // State tombol minimize [-] / [+]
+
+//--- State Signal Logger (Fase Agent-1: snapshot per bar baru H1) ---
+datetime         g_logLastH1Bar   = 0;   // bar H1 terakhir yg sudah di-snapshot
+bool             g_logHeaderDone  = false; // header CSV ditulis sekali per attach
+string           g_logFileName    = "";  // nama file hari ini (rotasi harian)
 
 //--- State Liquidity Sweep (Fase 5.4) ---
 int              g_lastSweepDir   = 0;   // 1 = Bullish Sweep, -1 = Bearish Sweep, 0 = None
@@ -1916,6 +1926,127 @@ StatsInfo CalcStats()
   }
 
 //+------------------------------------------------------------------+
+//| SIGNAL LOGGER: snapshot 18 kandidat (3 TF x RES/SUP 1-3) ke CSV  |
+//| Clock kunci H1 (agent_TF.md Bab 4-5). Snapshot-locked anti-curang.|
+//+------------------------------------------------------------------+
+string LoggerTrendCtx()
+  {
+   string s = "";
+   for(int i = 0; i < 3; i++)
+     {
+      string d = (g_trend[i].dir > 0 ? "UP" : (g_trend[i].dir < 0 ? "DN" : "FL"));
+      s += g_tfName[i] + "_" + d;
+      if(i < 2) s += "/";
+     }
+   s += "|ADX" + DoubleToString(g_trend[1].adx, 0);
+   return(s);
+  }
+
+int LoggerStrongRank(const int tfIdx, const int lvlIdx, const bool isRes)
+  {
+   for(int r = 0; r < 2; r++)
+     {
+      if(isRes)
+        {
+         if(g_strongResTF[r] == tfIdx && g_strongResLvl[r] == lvlIdx) return(r + 1);
+        }
+      else
+        {
+         if(g_strongSupTF[r] == tfIdx && g_strongSupLvl[r] == lvlIdx) return(r + 1);
+        }
+     }
+   return(0);
+  }
+
+void LoggerSDTag(const double mid, const double tol, int &sdOverlap, int &hasFVG, string &sdStatus)
+  {
+   sdOverlap = 0; hasFVG = 0; sdStatus = "None";
+   for(int t = 0; t < NUM_SD_TF && sdOverlap == 0; t++)
+     {
+      int sz = ArraySize(g_sdZones[t].zones);
+      for(int z = 0; z < sz; z++)
+        {
+         if(MathAbs(g_sdZones[t].zones[z].mid - mid) <= tol)
+           {
+            sdOverlap = 1;
+            if(g_sdZones[t].zones[z].hasFVG) hasFVG = 1;
+            sdStatus = (g_sdZones[t].zones[z].status == SD_FRESH ? "Fresh" : "Tested");
+            break;
+           }
+        }
+     }
+  }
+
+void LoggerWriteRow(const int f, const datetime sigTime, const string agentTF,
+                    const string side, const int rank, const SRLevel &lvl,
+                    const double atrTF, const double bid, const double ask,
+                    const long spreadPt, const string trendCtx, const int sweepFlag,
+                    const int expiryH)
+  {
+   if(!lvl.valid) return;
+   double distATR = (atrTF > 0 ? MathAbs(lvl.price - bid) / atrTF : 0.0);
+   int tfIdx = -1;
+   for(int t = 0; t < NUM_SR_TF; t++)
+      if(g_srTFName[t] == agentTF) { tfIdx = t; break; }
+   bool isRes = (side == "RES");
+   int sRank = LoggerStrongRank(tfIdx, rank - 1, isRes);
+   int isStrong = (sRank > 0 ? 1 : 0);
+   double tol = MathMax(InpConfToleranceATR * atrTF, 15 * _Point);
+   int sdO = 0, fvg = 0; string sdS = "None";
+   LoggerSDTag(lvl.price, tol, sdO, fvg, sdS);
+   string line = StringFormat("%s,%s,H1,%s,%s,%d,%.5f,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s,%.5f,%.5f,%d,%.5f,%.3f,%d,2.51",
+      TimeToString(sigTime, TIME_DATE | TIME_SECONDS), _Symbol, agentTF, side, rank,
+      lvl.price, lvl.touches, lvl.confluence, lvl.totalTouches,
+      isStrong, sRank, sdO, fvg, sdS, sweepFlag, trendCtx,
+      bid, ask, spreadPt, atrTF, distATR, expiryH);
+   FileWriteString(f, line + "\n");
+  }
+
+void LoggerMaybeSnapshot()
+  {
+   if(!InpEnableLogger) return;
+   datetime h1Bar = iTime(_Symbol, PERIOD_H1, 0);
+   if(h1Bar == 0 || h1Bar == g_logLastH1Bar) return;
+   g_logLastH1Bar = h1Bar;
+
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   string fname = StringFormat("%s_%04d%02d%02d.csv", InpLoggerPrefix, dt.year, dt.mon, dt.day);
+   bool needHeader = (!g_logHeaderDone || g_logFileName != fname);
+   g_logFileName = fname;
+
+   int f = FileOpen(fname, FILE_READ | FILE_WRITE | FILE_TXT | FILE_ANSI);
+   if(f == INVALID_HANDLE) { Print("SRD Logger: gagal buka ", fname, " err=", GetLastError()); return; }
+   FileSeek(f, 0, SEEK_END);
+   if(needHeader && FileSize(f) == 0)
+     {
+      FileWriteString(f, "time_utc,symbol,clock_tf,agent_tf,side,rank_jarak,price,touches,confluence,totalTouches,isStrongest,isStrongestRank,sdOverlap,hasFVG,sdStatus,sweepAtSignal,trendCtx,bid,ask,spread_pt,atr_tf,distATR,expiry_hours,version\n");
+      g_logHeaderDone = true;
+     }
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   long spreadPt = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   string trendCtx = LoggerTrendCtx();
+   int sweepFlag = 0;
+   if(g_lastSweepTime > 0 && (TimeCurrent() - g_lastSweepTime) <= 2 * PeriodSeconds(PERIOD_H1))
+      sweepFlag = 1;
+
+   for(int t = 0; t < NUM_SR_TF; t++)
+     {
+      double atrTF = GetATR(hSR_ATR[t]);
+      int expiryH = (g_srTF[t] == PERIOD_H4 ? 48 : 24);
+      for(int k = 0; k < NUM_SR_LEVELS; k++)
+        {
+         LoggerWriteRow(f, h1Bar, g_srTFName[t], "RES", k + 1, g_resLevel[t][k],
+                        atrTF, bid, ask, spreadPt, trendCtx, sweepFlag, expiryH);
+         LoggerWriteRow(f, h1Bar, g_srTFName[t], "SUP", k + 1, g_supLevel[t][k],
+                        atrTF, bid, ask, spreadPt, trendCtx, sweepFlag, expiryH);
+        }
+     }
+   FileClose(f);
+  }
+
+//+------------------------------------------------------------------+
 //| S&R ENGINE: recompute semua TF + cek Confluence + S&D + Terkuat |
 //+------------------------------------------------------------------+
 void RecomputeZones()
@@ -2760,6 +2891,9 @@ int OnInit()
 
    IndicatorSetString(INDICATOR_SHORTNAME, "SRD (S&R + S&D + Confluence)");
    g_lastBarTime    = 0;
+   g_logLastH1Bar   = 0; // logger mulai fresh tiap attach
+   g_logHeaderDone  = false;
+   g_logFileName    = "";
    ArrayFree(g_alertHistory);
    g_panelCollapsed = false;
 
@@ -2897,6 +3031,7 @@ int OnCalculate(const int rates_total,
 
    UpdateDashboard();
    CheckAlerts();
+   LoggerMaybeSnapshot(); // Fase Agent-1: snapshot CSV per bar baru H1 (gated InpEnableLogger)
 
    return(rates_total);
   }

@@ -1,5 +1,6 @@
 # Build MT5
 *.ex5
+*.log
 # Editor
 .vscode/
 *.code-workspace

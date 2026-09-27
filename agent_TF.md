@@ -14,7 +14,7 @@ Prinsip: terdekat utk entry, terjauh utk exit, terkuat utk filter.
 ## 2. Arsitektur 2 Lapis
 SRD_Indi.ex5 (chart) -> SRD_Logger (MQL5 snapshot per bar baru) -> CSV -> Judge (Python pandas).
 Logger: snapshot mentah tanpa menilai. Judge: majukan N bar, tentukan TP/SL duluan.
-File: agent_TF.md (ini), SRD_Logger.mq5 (spec Bab 5), judge.py (spec Bab 6).
+File: agent_TF.md (ini), logger di SRD_Indi.mq5 Fase Agent-1, judge.py (spec Bab 6).
 ## 3. Definisi Agent
 Tiga agent: agent_M30 (kolom M30, noise tinggi, frek tinggi),
 agent_H1 (sweet spot intraday XAUUSD), agent_H4 (win tinggi,
@@ -42,7 +42,7 @@ TIMEOUT (0R-biaya), NO_TRADE (tak tersentuh, luar statistik).
 Metrik: hit-TP1%, avg R, expectancy R, PF, median time-to-TP, MAE/MFE,
 sweep_fail%. Min n>=100 per grup sebelum simpulkan.
 
-## 5. Spec Logger (SRD_Logger.mq5, belum dibuat)
+## 5. Spec Logger (SRD_Indi.mq5 Fase Agent-1, SELESAI — default OFF)
 Snapshot tiap bar baru H1 (usulan, sinkron 3 agent) + saat SRD recompute.
 Satu baris CSV per kandidat (18 baris/snapshot):
 time_utc,symbol,clock_tf,agent_tf,side,rank_jarak,price,touches,
@@ -52,6 +52,9 @@ expiry_hours,version
 Anti-curang: tulis price/atr/bid/spread + hasFVG/sdStatus/confluence
 SAAT snapshot (FVG bisa mitigated 3 bar kemudian). Sertakan version 2.51.
 File: MQL5/Files/SRD_Indi_signals_YYYYMMDD.csv (append).
+Aktifkan via input InpEnableLogger=true (default false agar panel hemat IO).
+Fungsi: LoggerTrendCtx/LoggerStrongRank/LoggerSDTag/LoggerWriteRow/
+LoggerMaybeSnapshot dipanggil di OnCalculate + reset di OnInit.
 
 ## 6. Spec Judge (Python, belum dibuat)
 Input CSV + OHLC M30/H1/H4. Output tabel per (agent_tf,side,rank_jarak)
@@ -83,7 +86,7 @@ Fase 0 Kunci Aturan: SELESAI (Q1 H1, Q2 market N+1, Q3 TP2 level, Q4 24/24/48).
 0.4 Kunci simbol/periode (usul XAUUSD 2022-2024 spread real).
 Gate: Q1-Q4 kunci, lanjut Fase 1.
 
-Fase 1 Logger MQL5 (SRD_Logger.mq5).
+Fase 1 Logger: SELESAI (tulis CSV di dalam SRD_Indi, Opsi A).
 1.1 Buat indikator logger: handle ATR M30/H1/H4 + baca
 g_resLevel/g_supLevel 3x3 + TERKUAT + hasFVG/sdStatus + sweep + trend.
 1.2 Trigger snapshot tiap bar baru H1 (clock kunci), tulis 18 baris CSV
