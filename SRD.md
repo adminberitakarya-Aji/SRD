@@ -1,6 +1,6 @@
 # SRD.md
 
-> **Dokumentasi teknis & panduan penggunaan** — `SRD.mq5 v2.51`  
+> **Dokumentasi teknis & panduan penggunaan** — `SRD_Indi.mq5 v2.51`  
 > Indikator **standalone, read-only**: membaca harga, menganalisis struktur Multi-TF S&R + S&D Matrix (M30, H1, H4) + Level Terkuat + Kalkulator R:R Setup + FVG Imbalance Confluence + Detektor Liquidity Sweep + panel tren D1/H4/H1 dalam satu dashboard matriks presisi. **Tidak ada logika trading sama sekali** (tanpa order, lot, SL/TP, magic number) dan **tidak terhubung ke EA mana pun**.
 
 ---

@@ -1,6 +1,6 @@
 # Roadmap Pengembangan — SRD (MQL5)
 
-> Dokumen perencanaan teknis, backlog fitur, dan panduan evolusi untuk **`SRD.mq5`** (evolusi lanjutan dari `multi_indicator.mq5`).  
+> Dokumen perencanaan teknis, backlog fitur, dan panduan evolusi untuk **`SRD_Indi.mq5`** (evolusi lanjutan dari `multi_indicator.mq5`).  
 > Terakhir diperbarui: **2026-09** | Status Aktif: **v2.51 (Fase 5.6 Selesai Penuh)**.
 
 ---

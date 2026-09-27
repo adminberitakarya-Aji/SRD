@@ -3,10 +3,10 @@
 Indikator MQL5 read-only: S&R multi-TF (M30/H1/H4), confluence,
 level terkuat, R:R helper, S&D engine, FVG, liquidity sweep, smart alerts.
 
-Versi kode: `SRD.mq5` v2.51.
+Versi kode: `SRD_Indi.mq5` v2.51.
 
 ## File
-- `SRD.mq5` — source indikator
+- `SRD_Indi.mq5` — source indikator
 - `SRD.md` — dokumentasi teknis
 - `roadmap.md` — riwayat versi + backlog (Fase 5.6 selesai, 5.5 skip)
 - `agent_TF.md` — blueprint penilaian signal multi-agent per TF

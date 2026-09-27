@@ -1,6 +1,6 @@
 # Blueprint Penilaian Signal SRD — Multi-Agent per TF
 
-> Status: DRAFT diskusi | Acuan: SRD.mq5 v2.51
+> Status: DRAFT diskusi | Acuan: SRD_Indi.mq5 v2.51
 > Tujuan: ukur % kebenaran signal SRD per TF secara objektif.
 
 ## 1. Latar Belakang
@@ -12,7 +12,7 @@ Apakah filter (TERKUAT/Fresh/+FVG) yg bikin valid?
 Prinsip: terdekat utk entry, terjauh utk exit, terkuat utk filter.
 
 ## 2. Arsitektur 2 Lapis
-SRD.ex5 -> SRD_Logger (MQL5 snapshot per bar baru) -> CSV -> Judge (Python pandas).
+SRD_Indi.ex5 (chart) -> SRD_Logger (MQL5 snapshot per bar baru) -> CSV -> Judge (Python pandas).
 Logger: snapshot mentah tanpa menilai. Judge: majukan N bar, tentukan TP/SL duluan.
 File: agent_TF.md (ini), SRD_Logger.mq5 (spec Bab 5), judge.py (spec Bab 6).
 ## 3. Definisi Agent
@@ -51,7 +51,7 @@ sdStatus,sweepAtSignal,trendCtx,bid,ask,spread_pt,atr_tf,distATR,
 expiry_hours,version
 Anti-curang: tulis price/atr/bid/spread + hasFVG/sdStatus/confluence
 SAAT snapshot (FVG bisa mitigated 3 bar kemudian). Sertakan version 2.51.
-File: MQL5/Files/SRD_signals_YYYYMMDD.csv (append).
+File: MQL5/Files/SRD_Indi_signals_YYYYMMDD.csv (append).
 
 ## 6. Spec Judge (Python, belum dibuat)
 Input CSV + OHLC M30/H1/H4. Output tabel per (agent_tf,side,rank_jarak)
