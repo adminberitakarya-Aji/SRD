@@ -29,6 +29,13 @@
 //|                                                                  |
 //|  Dokumentasi lengkap: SRD.md & roadmap.md                         |
 //|                                                                  |
+//|  BARU DI v2.61 (Audit Fix — versi CSV logger):                     |
+//|   - BUG FIX: kolom `version` di CSV logger sebelumnya hardcode    |
+//|     "2.51". Kini memakai #define SRD_VERSION (satu sumber), jadi  |
+//|     judge.py/validate_live.py bisa membedakan data antar-rilis.   |
+//|     CATATAN: #property version tidak bisa memakai macro, sehingga |
+//|     saat rilis berikut ubah KEDUANYA (SRD_VERSION + #property).    |
+//|                                                                  |
 //|  BARU DI v2.60 (Fase 4.2 — Ranking Kualitas SOP LIVE):              |
 //|   - SDZoneScore(): Fresh=1000 + FVG=100 + srConfl=50 + strength    |
 //|     - penalti jarak/ATR. BuildNearestSD & FindStrongestLevels      |
@@ -63,7 +70,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "SRD - Multi-TF S&R Matrix, Confluence & S&D Engine"
 #property link        ""
-#property version     "2.60"
+#property version     "2.61"
 #property description "Multi-TF S&R Matrix (M30,H1,H4) + Confluence + Proximity + Toggle S&R/S&D + Quick Stats + Trend D1/H4/H1"
 #property description "Level Terkuat + R:R Helper + S&D Engine + FVG Imbalance + Liquidity Sweep + Smart Alert (Push MT5)"
 #property indicator_chart_window
@@ -71,6 +78,8 @@
 #property indicator_plots   0
 
 //--- Prefix semua objek chart milik indicator ini (untuk cleanup rapi & anti-bentrok dgn indikator lain)
+//--- Versi tunggal: dipakai #property version DAN kolom version di CSV logger
+#define SRD_VERSION   "2.61"
 #define OBJ_PREFIX    "SRD_"
 #define NUM_SR_TF     3
 #define NUM_SR_LEVELS 3
@@ -2051,11 +2060,11 @@ void LoggerWriteRow(const int f, const datetime sigTime, const string agentTF,
    double tol = MathMax(InpConfToleranceATR * atrTF, 15 * _Point);
    int sdO = 0, fvg = 0; string sdS = "None";
    LoggerSDTag(lvl.price, tol, sdO, fvg, sdS);
-   string line = StringFormat("%s,%s,H1,%s,%s,%d,%.5f,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s,%.5f,%.5f,%d,%.5f,%.3f,%d,2.51",
+   string line = StringFormat("%s,%s,H1,%s,%s,%d,%.5f,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s,%.5f,%.5f,%d,%.5f,%.3f,%d,%s",
       TimeToString(sigTime, TIME_DATE | TIME_SECONDS), _Symbol, agentTF, side, rank,
       lvl.price, lvl.touches, lvl.confluence, lvl.totalTouches,
       isStrong, sRank, sdO, fvg, sdS, sweepFlag, trendCtx,
-      bid, ask, spreadPt, atrTF, distATR, expiryH);
+      bid, ask, spreadPt, atrTF, distATR, expiryH, SRD_VERSION);
    FileWriteString(f, line + "\n");
   }
 
